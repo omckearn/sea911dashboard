@@ -1,0 +1,329 @@
+/* Make the page two rows: header + content */
+html, body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto 1fr; /* header, then map area */
+}
+
+/* Map takes the remaining space */
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Chart panel floats above the map, below the header */
+#chart-panel {
+  position: fixed;         /* pin to viewport */
+  top: 64px;               /* ~header height; tweak if needed */
+  right: 12px;
+  width: 280px;
+  max-height: calc(100% - 76px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  padding: 12px 14px;
+  overflow-y: auto;
+  z-index: 10;             /* above map */
+}
+#chart-panel h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #111827;
+}
+
+/* Ensure Mapbox controls are visible above the map canvas and not hidden */
+.mapboxgl-ctrl {
+  z-index: 20;
+}
+
+/* Selected row highlight in the pie legend table */
+.pie-legend-table tr.selected {
+  outline: 2px solid #3B82F6;
+  outline-offset: -1px;
+  background-color: #DBEAFE !important;
+}
+
+/* Small colored square in legend rows (if missing) */
+.pie-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* 🔹 Global font */
+body, button, select, .mapboxgl-ctrl {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: #111827;
+}
+
+/* 🔹 Header nav */
+.app-header {
+  background: #1f2937;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+}
+.app-header nav a {
+  color: #d1d5db;
+  text-decoration: none;
+  margin-right: 20px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.app-header nav a:hover {
+  color: #fff;
+}
+.app-header nav a.active {
+  color: #3B82F6;
+  font-weight: 600;
+}
+
+/* 🔹 Dashboard-style controls */
+.mapboxgl-ctrl button,
+.mapboxgl-ctrl select {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mapboxgl-ctrl button:hover,
+.mapboxgl-ctrl select:hover {
+  border-color: #9ca3af;
+  background: #f9fafb;
+}
+.mapboxgl-ctrl button.on {
+  background: #3B82F6;
+  color: #fff;
+  border-color: #2563eb;
+}
+.mapboxgl-ctrl button.off {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* 🔹 Improve dropdown select */
+.mapboxgl-ctrl select {
+  appearance: none;
+  padding-right: 24px;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4l4 4 4-4'/ %3E%3C/svg%3E") no-repeat right 8px center;
+  background-size: 12px;
+}
+
+/* 🔹 Wrap each custom Mapbox control in a styled panel */
+.mapboxgl-ctrl.basemap-ctrl,
+.mapboxgl-ctrl.layers-ctrl {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mapboxgl-ctrl.main-control-panel {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Keep the labels subtle */
+.basemap-label,
+.layers-label {
+  margin-right: 4px;
+  font-weight: 500;
+  color: #374151;
+}
+
+/* Ensure selects fit nicely */
+.basemap-select,
+.layers-select {
+  flex: 1;
+}
+
+/* 🔹 Unified dashboard control panel */
+#control-panel {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 220px;
+}
+#control-panel .control-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#control-panel .control-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+#control-panel .control-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#control-panel .control-row .control-select,
+#control-panel .control-row select,
+#control-panel .control-row button {
+  flex: 1;
+}
+#control-panel .control-button-group {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+#control-panel .control-button-group button {
+  width: 100%;
+}
+#control-panel button {
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Hide the old legend title */
+.legend-title { display: none; }
+
+/* --- Timeline (dual-thumb slider) --- */
+#timeline {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(920px, 86vw);
+  z-index: 100;
+}
+
+.tl-card {
+  background: linear-gradient(#f8fafc, #f3f4f6);
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+  padding: 14px 18px 10px;
+}
+
+.tl-wrap {
+  position: relative;
+  height: 26px;
+}
+
+.tl-track {
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.tl-range {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  background: #2563eb;
+  border-radius: 999px;
+  z-index: 1;
+}
+
+/* Each slider covers full width */
+#tl-start, #tl-end {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: none; /* disable track */
+  z-index: 2;
+}
+
+/* Tracks */
+#tl-start::-webkit-slider-runnable-track,
+#tl-end::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+#tl-start::-moz-range-track,
+#tl-end::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
+/* Thumbs */
+#tl-start::-webkit-slider-thumb,
+#tl-end::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  cursor: pointer;
+  margin-top: -6px;
+  pointer-events: auto; /* ✅ allow dragging */
+}
+#tl-start::-moz-range-thumb,
+#tl-end::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Tick labels */
+.tl-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+.tl-ticks span:first-child,
+.tl-ticks span:last-child {
+  color: #111827;
+}

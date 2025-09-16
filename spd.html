@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPD Crime in the past 24hrs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <link
+  href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css"
+  rel="stylesheet"
+  />
+    <title>SPD Crime (Past 24hrs)</title>
+
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16x16.png">
+    <link rel="manifest" href="img/site.webmanifest">
+    <link rel="shortcut icon" href="img/favicon.ico">
+
+</head>
+<body>
+  <!-- 🔹 Shared Header -->
+  <header class="app-header">
+    <nav>
+      <a href="index.html" class="active">SFD Dispatches (Past 24hrs)</a>
+      <a href="spd.html" class="active">SPD Crime in the past 24hrs</a>
+    </nav>
+  </header>
+
+  <!-- 🔹 Map container -->
+  <div id="map"></div>
+  <div id="chart-panel">
+    <h3>Crime Breakdown</h3>
+    <div id="chart-content"></div>
+  </div>
+
+  <!-- Timeline (24h ago -> Now) -->
+  <div id="timeline">
+    <div class="tl-card">
+      <div class="tl-wrap">
+        <div class="tl-track"></div>
+        <div class="tl-range" id="tl-range"></div>
+        <input type="range" id="tl-start" min="0" max="168" value="0" step="1">
+        <input type="range" id="tl-end" min="0" max="168" value="168" step="1">
+      </div>
+      <div class="tl-ticks">
+        <span>7d ago</span>
+        <span>5d</span>
+        <span>3d</span>
+        <span>1d</span>
+        <span>Now</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <script src="spdapp.js"></script>
+</body>
+</html>
