@@ -507,7 +507,9 @@ function filterIncidentsByTime(startHour, endHour) {
   const boundedStart = Math.max(0, Math.min(MAX, Number.isFinite(+startHour) ? +startHour : 0));
   const boundedEnd = Math.max(0, Math.min(MAX, Number.isFinite(+endHour) ? +endHour : MAX));
   const start = Math.min(boundedStart, boundedEnd); const end = Math.max(boundedStart, boundedEnd);
-  window.currentTimeFilter = { startHour: start, endHour: end }; applyIncidentFilters();
+  window.currentTimeFilter = { startHour: start, endHour: end };
+  try { updateSPDChartRangeLabel(); } catch (_) {}
+  applyIncidentFilters();
 }
 
 function applyIncidentFilters() {
@@ -533,4 +535,132 @@ function applyIncidentFilters() {
   }
   const expr = f.length ? ['all', ...f] : null;
   layers.forEach(id => { if (map.getLayer(id)) map.setFilter(id, expr); });
+
+  // Update the pie chart/legend to reflect the current filters
+  try { updateSPDChartForCurrentSelection(); } catch (e) { console.warn('[SPD] Chart update failed:', e); }
+}
+
+// Update the text under "Crime Breakdown" to reflect the selected time window (past 7 days)
+function updateSPDChartRangeLabel() {
+  const el = document.getElementById('chart-range');
+  if (!el) return;
+  const MAX = 168; // hours in 7 days
+  const { startHour, endHour } = window.currentTimeFilter || { startHour: 0, endHour: MAX };
+  const now = new Date();
+  const endDate = new Date(now.getTime() - ((MAX - endHour) * 60 * 60 * 1000));
+  const startDate = new Date(now.getTime() - ((MAX - startHour) * 60 * 60 * 1000));
+  const fmt = (d) => d.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  }).replace(' AM', 'am').replace(' PM', 'pm');
+  const endTag = endHour === MAX ? ' (current time)' : '';
+  const startTag = startHour === 0 ? ' (7 days ago)' : '';
+  el.textContent = `from ${fmt(endDate)} PST${endTag} to ${fmt(startDate)} PST${startTag}`;
+}
+
+// Recompute the chart for the current time window (and category filter) without
+// modifying the global type→color map used by the map layer.
+function updateSPDChartForCurrentSelection() {
+  if (!window.latestSPDGeojson || !Array.isArray(window.latestSPDGeojson.features)) return;
+
+  const features = window.latestSPDGeojson.features;
+  const MAX = 168;
+  const { startHour, endHour } = window.currentTimeFilter || { startHour: 0, endHour: MAX };
+  const s = Math.max(0, Math.min(MAX, startHour));
+  const e = Math.max(0, Math.min(MAX, endHour));
+  const minAge = Math.max(0, Math.min(1, 1 - (e / MAX)));
+  const maxAge = Math.max(0, Math.min(1, 1 - (s / MAX)));
+
+  let filtered = features.filter(f => {
+    const af = f?.properties?.ageFraction;
+    return typeof af === 'number' && af >= minAge && af <= maxAge;
+  });
+
+  const selectedType = window.selectedCrimeType || null;
+  if (selectedType) {
+    if (selectedType === 'Other' && Array.isArray(window.topCategoriesReal) && window.topCategoriesReal.length) {
+      const topSet = new Set(window.topCategoriesReal);
+      filtered = filtered.filter(f => !topSet.has(f?.properties?.category));
+    } else {
+      filtered = filtered.filter(f => (f?.properties?.category) === selectedType);
+    }
+  }
+
+  renderSPDIncidentChartDynamic(filtered);
+}
+
+function renderSPDIncidentChartDynamic(features) {
+  const typeCounts = {};
+  (features || []).forEach(f => {
+    const type = (f?.properties?.category) || 'Other';
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+  });
+
+  const total = Object.values(typeCounts).reduce((a,b)=>a+b,0);
+  const sorted = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]);
+  const top9 = sorted.slice(0,9);
+  const otherCount = sorted.slice(9).reduce((s, [,c]) => s + c, 0);
+  if (otherCount > 0) top9.push(['Other', otherCount]);
+
+  const labels = top9.map(([t])=>t);
+  const counts = top9.map(([,c])=>c);
+
+  // Keep "Other" mapping correct for click handling
+  window.topCategoriesReal = top9.filter(([t]) => t !== 'Other').map(([t]) => t);
+
+  const colorMap = window.typeColorMap || {};
+  const colors = labels.map(l => colorMap[l] || '#9ca3af');
+
+  const chart = document.getElementById('chart-content');
+  if (!chart) return;
+  chart.innerHTML = `<canvas id="pieCanvas" width="240" height="240"></canvas><div id="pie-legend"></div>`;
+  const ctx = document.getElementById('pieCanvas').getContext('2d');
+
+  let start = 0; const safeTotal = total || 1;
+  counts.forEach((count,i)=>{
+    const angle=(count/safeTotal)*2*Math.PI;
+    ctx.beginPath(); ctx.moveTo(120,120);
+    ctx.arc(120,120,100,start,start+angle);
+    ctx.closePath(); ctx.fillStyle=colors[i]; ctx.fill();
+    start+=angle;
+  });
+
+  const legend = document.getElementById('pie-legend'); legend.innerHTML='';
+  const table = document.createElement('table');
+  table.className='pie-legend-table'; table.style.width='100%'; table.style.fontSize='14px';
+  table.style.borderCollapse='collapse'; table.style.marginTop='10px';
+
+  const syncRowSelectionUI = () => {
+    const selected = window.selectedCrimeType || null;
+    table.querySelectorAll('tr').forEach(tr => {
+      const cat = tr.dataset.category;
+      if (selected && cat === selected) tr.classList.add('selected'); else tr.classList.remove('selected');
+    });
+  };
+
+  labels.forEach((label,i)=>{
+    const count = counts[i]; const percentage = ((count/(safeTotal||1))*100).toFixed(1);
+    const row = document.createElement('tr');
+    row.style.background = i%2===0 ? '#ffffff' : '#f3f4f6';
+    row.style.height='32px'; row.style.cursor='pointer'; row.dataset.category=label;
+
+    const typeCell = document.createElement('td');
+    typeCell.style.padding='6px 8px'; typeCell.style.whiteSpace='nowrap';
+    typeCell.style.display='flex'; typeCell.style.alignItems='center';
+    typeCell.innerHTML = `<span class="pie-swatch" style="background:${colors[i]}; margin-right:8px;"></span><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${label}</span>`;
+
+    const countCell = document.createElement('td');
+    countCell.style.padding='6px 8px'; countCell.style.textAlign='right';
+    countCell.style.whiteSpace='nowrap'; countCell.textContent = `${count} (${percentage}%)`;
+
+    row.appendChild(typeCell); row.appendChild(countCell); table.appendChild(row);
+
+    row.addEventListener('click', ()=>{
+      const curr = window.selectedCrimeType || null;
+      setIncidentFilter(curr===label?null:label);
+      syncRowSelectionUI();
+    });
+  });
+  legend.appendChild(table); syncRowSelectionUI();
 }

@@ -868,6 +868,11 @@ function renderIncidentChart(features) {
 
   // If there was a selection already (e.g., after toggle or re-render), reflect it
   syncRowSelectionUI();
+
+  // Keep the color legend in sync once colors are established
+  if (typeof window.updateIncidentLegend === 'function') {
+    try { window.updateIncidentLegend(); } catch (_) {}
+  }
 }
 
 
@@ -1020,6 +1025,8 @@ function filterIncidentsByTime(startHour, endHour) {
   const end = Math.max(boundedStart, boundedEnd);
 
   window.currentTimeFilter = { startHour: start, endHour: end };
+  // Update the chart subtitle label with the current time window
+  try { updateChartRangeLabel(); } catch (_) {}
   applyIncidentFilters();
 }
 
@@ -1058,4 +1065,189 @@ function applyIncidentFilters() {
       map.setFilter(layerId, filterExpr);
     }
   });
+
+  // After applying map filters, update the pie chart/legend to reflect
+  // the currently selected time range (and category filter, if any).
+  try {
+    updateIncidentChartForCurrentSelection();
+  } catch (e) {
+    console.warn('Chart update failed:', e);
+  }
+}
+
+// Update the text under "Dispatch Breakdown" to reflect the selected time window.
+function updateChartRangeLabel() {
+  const labelEl = document.getElementById('chart-range');
+  if (!labelEl) return;
+
+  const MAX = 24; // hours
+  const { startHour, endHour } = window.currentTimeFilter || { startHour: 0, endHour: MAX };
+  const now = new Date();
+  const endDate = new Date(now.getTime() - ((MAX - endHour) * 60 * 60 * 1000)); // now or earlier
+  const startDate = new Date(now.getTime() - ((MAX - startHour) * 60 * 60 * 1000)); // 24h ago or later
+
+  // Build dd/mm h:mm am/pm in Pacific Time, with lowercase am/pm and lowercase 'pst'.
+  const dateFmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Los_Angeles',
+    day: '2-digit',
+    month: '2-digit'
+  });
+  const timeFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  const fmt = (d) => {
+    const date = dateFmt.format(d); // dd/mm
+    const parts = Object.fromEntries(timeFmt.formatToParts(d).map(p => [p.type, p.value]));
+    const hour = parts.hour; // no leading zero in en-US when hour12
+    const minute = parts.minute; // 2-digit
+    const ampm = (parts.dayPeriod || '').toLowerCase();
+    return `${date} ${hour}:${minute} ${ampm} pst`;
+  };
+
+  // Exact phrasing requested: from (now) ... to ... (24 hrs ago)
+  const endTag = endHour === MAX ? '(now) ' : '';
+  const startTag = startHour === 0 ? ' (24 hrs ago)' : '';
+
+  labelEl.textContent = `from ${endTag}${fmt(endDate)} to ${fmt(startDate)}${startTag}`;
+}
+
+// Recompute the pie chart and legend based on current filters without
+// mutating the global type→color map used by the map layer.
+function updateIncidentChartForCurrentSelection() {
+  if (!window.latest911Geojson || !Array.isArray(window.latest911Geojson.features)) return;
+
+  const features = window.latest911Geojson.features;
+
+  // Time window (24h)
+  const MAX = 24;
+  const { startHour, endHour } = window.currentTimeFilter || { startHour: 0, endHour: MAX };
+  const s = Math.max(0, Math.min(MAX, startHour));
+  const e = Math.max(0, Math.min(MAX, endHour));
+  const minAge = Math.max(0, Math.min(1, 1 - (e / MAX)));
+  const maxAge = Math.max(0, Math.min(1, 1 - (s / MAX)));
+
+  // Apply time filter
+  let filtered = features.filter(f => {
+    const af = f?.properties?.ageFraction;
+    return typeof af === 'number' && af >= minAge && af <= maxAge;
+  });
+
+  // Optionally apply category filter so chart matches what’s visible
+  const selectedType = window.selectedCrimeType || null;
+  if (selectedType) {
+    if (selectedType === 'Other' && Array.isArray(window.topCategoriesReal) && window.topCategoriesReal.length) {
+      const topSet = new Set(window.topCategoriesReal);
+      filtered = filtered.filter(f => !topSet.has(f?.properties?.category));
+    } else {
+      filtered = filtered.filter(f => (f?.properties?.category) === selectedType);
+    }
+  }
+
+  renderIncidentChartDynamic(filtered);
+}
+
+// Draws the chart for the given feature subset using the existing
+// window.typeColorMap for color consistency; does not overwrite it.
+function renderIncidentChartDynamic(features) {
+  const typeCounts = {};
+  (features || []).forEach(f => {
+    const type = (f?.properties?.category) || 'Unknown';
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+  });
+
+  const total = Object.values(typeCounts).reduce((a, b) => a + b, 0);
+  const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+  const top9 = sorted.slice(0, 9);
+  const otherCount = sorted.slice(9).reduce((sum, [, c]) => sum + c, 0);
+  if (otherCount > 0) top9.push(['Other', otherCount]);
+
+  const labels = top9.map(([t]) => t);
+  const counts = top9.map(([, c]) => c);
+
+  // Track real top list for correct "Other" handling on click
+  window.topCategoriesReal = top9.filter(([t]) => t !== 'Other').map(([t]) => t);
+
+  const colorMap = window.typeColorMap || {};
+  const colors = labels.map(l => colorMap[l] || '#9ca3af');
+
+  const chart = document.getElementById('chart-content');
+  if (!chart) return;
+  chart.innerHTML = `<canvas id="pieCanvas" width="240" height="240"></canvas><div id="pie-legend"></div>`;
+  const canvas = document.getElementById('pieCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let start = 0;
+  const safeTotal = total || 1; // avoid 0/0 angles
+  counts.forEach((count, i) => {
+    const angle = (count / safeTotal) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(120, 120);
+    ctx.arc(120, 120, 100, start, start + angle);
+    ctx.closePath();
+    ctx.fillStyle = colors[i];
+    ctx.fill();
+    start += angle;
+  });
+
+  const legend = document.getElementById('pie-legend');
+  legend.innerHTML = '';
+  const table = document.createElement('table');
+  table.className = 'pie-legend-table';
+  table.style.width = '100%';
+  table.style.fontSize = '14px';
+  table.style.borderCollapse = 'collapse';
+  table.style.marginTop = '10px';
+
+  const syncRowSelectionUI = () => {
+    const selected = window.selectedCrimeType || null;
+    table.querySelectorAll('tr').forEach(tr => {
+      const cat = tr.dataset.category;
+      if (selected && cat === selected) tr.classList.add('selected');
+      else tr.classList.remove('selected');
+    });
+  };
+
+  labels.forEach((label, i) => {
+    const count = counts[i];
+    const percentage = ((count / (safeTotal || 1)) * 100).toFixed(1);
+    const bgColor = i % 2 === 0 ? '#ffffff' : '#f3f4f6';
+
+    const row = document.createElement('tr');
+    row.style.background = bgColor;
+    row.style.height = '32px';
+    row.style.cursor = 'pointer';
+    row.dataset.category = label;
+
+    const typeCell = document.createElement('td');
+    typeCell.style.padding = '6px 8px';
+    typeCell.style.whiteSpace = 'nowrap';
+    typeCell.style.display = 'flex';
+    typeCell.style.alignItems = 'center';
+    typeCell.innerHTML = `
+      <span class="pie-swatch" style="background:${colors[i]}; margin-right:8px;"></span>
+      <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${label}</span>
+    `;
+
+    const countCell = document.createElement('td');
+    countCell.style.padding = '6px 8px';
+    countCell.style.textAlign = 'right';
+    countCell.style.whiteSpace = 'nowrap';
+    countCell.textContent = `${count} (${percentage}%)`;
+
+    row.appendChild(typeCell);
+    row.appendChild(countCell);
+    table.appendChild(row);
+
+    row.addEventListener('click', () => {
+      const currentlySelected = window.selectedCrimeType || null;
+      if (currentlySelected === label) setIncidentFilter(null);
+      else setIncidentFilter(label);
+      syncRowSelectionUI();
+    });
+  });
+  legend.appendChild(table);
+  syncRowSelectionUI();
 }
