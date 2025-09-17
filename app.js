@@ -94,9 +94,10 @@ map.on('load', () => {
 
   // Incidents
   load911CallsPast24h();
-  addIncidentLegend();
+  // remove bottom-left legend
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+  addDataAttributionControl();
 
 });
 
@@ -190,6 +191,24 @@ function buildTractLayers() {
 
   // (re)attach interactions to real layers
   realLayerIds.forEach(attachTractInteractions);
+}
+
+// Bottom-left data source attribution control
+function addDataAttributionControl() {
+  const url = 'https://data.seattle.gov/Public-Safety/Seattle-Real-Time-Fire-911-Calls/kzjm-xkqj/about_data';
+  const label = 'Seattle Open Data Portal — Fire 911 Calls';
+
+  const ctrl = {
+    onAdd: () => {
+      const el = document.createElement('div');
+      el.className = 'mapboxgl-ctrl data-attrib-ctrl';
+      el.innerHTML = `Data: <a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      ctrl._el = el;
+      return el;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  map.addControl(ctrl, 'bottom-left');
 }
 /* When basemap changes, rebuild tracts and restore selection */
 function switchBasemap(key) {
@@ -983,6 +1002,8 @@ function restoreIncidentLayerIfMissing() {
 }
 
 function addIncidentLegend() {
+  // Legend disabled per request; keep function for compatibility but do not add control
+  return;
   const container = document.createElement('div');
   container.className = 'mapboxgl-ctrl legend-ctrl';
   container.id = 'incident-legend';
@@ -993,12 +1014,9 @@ function addIncidentLegend() {
 
     container.innerHTML = `
       <div class="legend">
-        <div class="legend-row" style="grid-template-columns: repeat(2, 1fr); gap: 6px;">
+        <div class="legend-row" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           ${entries.map(([type, color]) => `
-            <div class="legend-item">
-              <span class="legend-swatch" style="background:${color}"></span>
-              <span class="legend-label">${type}</span>
-            </div>
+            <div class="legend-item"><span class="legend-swatch" style="background:${color}"></span></div>
           `).join('')}
         </div>
       </div>
@@ -1086,8 +1104,8 @@ function updateChartRangeLabel() {
   const endDate = new Date(now.getTime() - ((MAX - endHour) * 60 * 60 * 1000)); // now or earlier
   const startDate = new Date(now.getTime() - ((MAX - startHour) * 60 * 60 * 1000)); // 24h ago or later
 
-  // Build dd/mm h:mm am/pm in Pacific Time, with lowercase am/pm and lowercase 'pst'.
-  const dateFmt = new Intl.DateTimeFormat('en-GB', {
+  // Build mm/dd h:mm am/pm in Pacific Time, with lowercase am/pm and lowercase 'pst'.
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles',
     day: '2-digit',
     month: '2-digit'
@@ -1099,7 +1117,7 @@ function updateChartRangeLabel() {
     hour12: true
   });
   const fmt = (d) => {
-    const date = dateFmt.format(d); // dd/mm
+    const date = dateFmt.format(d); // mm/dd
     const parts = Object.fromEntries(timeFmt.formatToParts(d).map(p => [p.type, p.value]));
     const hour = parts.hour; // no leading zero in en-US when hour12
     const minute = parts.minute; // 2-digit

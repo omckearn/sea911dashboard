@@ -66,7 +66,7 @@ map.on('load', () => {
 
   // Incidents
   loadSPDCrimesPast24h();
-  addIncidentLegend();
+  // legend removed per request
 
   // Nav control goes under our panel
   map.addControl(new mapboxgl.NavigationControl(), 'top-left');
@@ -424,12 +424,9 @@ function addIncidentLegend() {
     const entries = Object.entries(window.typeColorMap);
     container.innerHTML = `
       <div class="legend">
-        <div class="legend-row" style="grid-template-columns: repeat(2, 1fr); gap: 6px;">
+        <div class="legend-row" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           ${entries.map(([type, color]) => `
-            <div class="legend-item">
-              <span class="legend-swatch" style="background:${color}"></span>
-              <span class="legend-label">${type}</span>
-            </div>
+            <div class="legend-item"><span class="legend-swatch" style="background:${color}"></span></div>
           `).join('')}
         </div>
       </div>`;

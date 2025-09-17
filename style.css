@@ -47,6 +47,23 @@ body {
   z-index: 20;
 }
 
+/* Small bottom-left data source attribution */
+.mapboxgl-ctrl.data-attrib-ctrl {
+  background: rgba(255,255,255,0.9);
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 4px;
+  font-size: 11px;
+  color: #374151;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.data-attrib-ctrl a {
+  color: #1f2937;
+  text-decoration: none;
+}
+.data-attrib-ctrl a:hover { text-decoration: underline; }
+
 /* Selected row highlight in the pie legend table */
 .pie-legend-table tr.selected {
   outline: 2px solid #3B82F6;
@@ -223,6 +240,14 @@ body, button, select, .mapboxgl-ctrl {
 
 /* Hide the old legend title */
 .legend-title { display: none; }
+
+/* Bottom-left incident color swatches without labels */
+#incident-legend .legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
 
 /* --- Timeline (dual-thumb slider) --- */
 #timeline {
