@@ -90,6 +90,7 @@ let refreshViewModeButtonsUI = null;
 map.on('load', () => {
   buildTractLayers();
   addMainControlPanel();
+  addAddressSearchControl();
   setActiveLayer(activeLayerId);
 
   // Incidents
@@ -97,7 +98,9 @@ map.on('load', () => {
   // remove bottom-left legend
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+  addResetViewControl();
   addDataAttributionControl();
+  ensureIntroModal('SFD');
 
 });
 
@@ -125,7 +128,7 @@ function buildTractLayers() {
           20000, '#1d4ed8',
           40000, '#1e40af'
         ],
-        'fill-opacity': 0.1
+        'fill-opacity': 0.25
       };
     } else if (layer.scheme === 'age') {
       paint = {
@@ -139,7 +142,7 @@ function buildTractLayers() {
           50, '#ea580c',
           55, '#9a3412'
         ],
-        'fill-opacity': 0.1
+        'fill-opacity': 0.25
       };
     } else if (layer.scheme === 'income') {
       paint = {
@@ -153,7 +156,7 @@ function buildTractLayers() {
           200000, '#16a34a',
           260000, '#166534'
         ],
-        'fill-opacity': 0.1
+        'fill-opacity': 0.25
       };
     }
 
@@ -209,6 +212,132 @@ function addDataAttributionControl() {
     onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
   };
   map.addControl(ctrl, 'bottom-left');
+}
+
+// Simple address search (Mapbox Geocoding)
+function addAddressSearchControl() {
+  const ctrl = {
+    onAdd: () => {
+      const wrap = document.createElement('div');
+      wrap.className = 'mapboxgl-ctrl search-ctrl';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Search address in Seattle…';
+      input.setAttribute('aria-label', 'Search address');
+      const btn = document.createElement('button');
+      btn.textContent = 'Search';
+      const submit = async () => {
+        const q = input.value.trim();
+        if (!q) return;
+        try {
+          const bbox = [-122.459696, 47.481002, -122.224433, 47.734136]; // Seattle approx
+          const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxgl.accessToken}&types=address,poi&bbox=${bbox.join(',')}&limit=1`; 
+          const resp = await fetch(url);
+          const data = await resp.json();
+          const feat = data && data.features && data.features[0];
+          if (feat && Array.isArray(feat.center)) {
+            map.flyTo({ center: feat.center, zoom: 15 });
+          }
+        } catch (e) { console.warn('Geocode failed:', e); }
+      };
+      btn.addEventListener('click', submit);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+      wrap.appendChild(input);
+      wrap.appendChild(btn);
+      ctrl._el = wrap;
+      return wrap;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  map.addControl(ctrl, 'top-left');
+}
+
+// Reset view/home control
+function addResetViewControl() {
+  const ctrl = {
+    onAdd: () => {
+      const wrap = document.createElement('div');
+      wrap.className = 'mapboxgl-ctrl mapboxgl-ctrl-group reset-ctrl';
+      const btn = document.createElement('button');
+      btn.setAttribute('title', 'Reset view');
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>`;
+      btn.addEventListener('click', () => resetView());
+      wrap.appendChild(btn);
+      ctrl._el = wrap;
+      return wrap;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  map.addControl(ctrl, 'top-left');
+}
+
+function resetView() {
+  try {
+    // Fit to Seattle extent
+    const bounds = new mapboxgl.LngLatBounds([-122.459696, 47.481002], [-122.224433, 47.734136]);
+    map.fitBounds(bounds, { padding: 40, duration: 600, maxZoom: 13.5 });
+
+    // Reset time slider to full 24h
+    const MAX = 24;
+    const sEl = document.getElementById('tl-start');
+    const eEl = document.getElementById('tl-end');
+    const rangeEl = document.getElementById('tl-range');
+    if (sEl && eEl && rangeEl) {
+      sEl.value = '0';
+      eEl.value = String(MAX);
+      filterIncidentsByTime(0, MAX);
+      rangeEl.style.left = '0%';
+      rangeEl.style.width = '100%';
+    }
+
+    // Clear incident type filter and show dots
+    setIncidentFilter(null);
+    incidentViewMode = 'dots';
+    setIncidentVisibility(true);
+    applyIncidentLayerVisibility();
+  } catch (e) { console.warn('Reset view failed:', e); }
+}
+
+// First-visit intro modal
+function ensureIntroModal(contextLabel) {
+  try {
+    const KEY = 'cm_intro_seen_v1';
+    if (localStorage.getItem(KEY) === '1') return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'intro-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'intro-modal';
+
+    modal.innerHTML = `
+      <h3>Welcome</h3>
+      <p>This map shows recent dispatches in Seattle. Explore the data and customize the view:</p>
+      <ul>
+        <li>Filter by incident type using the table rows next to the pie chart.</li>
+        <li>Adjust the timeline at the bottom to focus on a specific time window.</li>
+        <li>Switch basemaps and toggle Dot Density or Heatmap in the left control panel.</li>
+        <li>Click any dot to see details like time, address, and incident number.</li>
+      </ul>
+      <div class="intro-actions">
+        <button class="intro-btn" id="intro-ok">OK</button>
+      </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      try { localStorage.setItem(KEY, '1'); } catch {}
+      overlay.remove();
+    };
+    modal.querySelector('#intro-ok').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, { once: true });
+  } catch (e) { console.warn('Intro modal failed:', e); }
 }
 /* When basemap changes, rebuild tracts and restore selection */
 function switchBasemap(key) {

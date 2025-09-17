@@ -62,6 +62,7 @@ const realLayerIds = tractLayers.filter(l => l.id !== 'none').map(l => l.id);
 map.on('load', () => {
   buildTractLayers();
   addMainControlPanel();
+  addAddressSearchControl();
   setActiveLayer(activeLayerId);
 
   // Incidents
@@ -70,6 +71,8 @@ map.on('load', () => {
 
   // Nav control goes under our panel
   map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+  addResetViewControl();
+  ensureIntroModal('SPD');
 });
 
 function buildTractLayers() {
@@ -84,13 +87,13 @@ function buildTractLayers() {
     let paint;
     if (layer.scheme === 'density') {
       paint = { 'fill-color': [ 'interpolate', ['linear'], densityExpr,
-        0,'#eff6ff', 1000,'#bfdbfe', 3000,'#93c5fd', 6000,'#60a5fa', 12000,'#3b82f6', 20000,'#1d4ed8', 40000,'#1e40af' ], 'fill-opacity': 0.1 };
+        0,'#eff6ff', 1000,'#bfdbfe', 3000,'#93c5fd', 6000,'#60a5fa', 12000,'#3b82f6', 20000,'#1d4ed8', 40000,'#1e40af' ], 'fill-opacity': 0.25 };
     } else if (layer.scheme === 'age') {
       paint = { 'fill-color': [ 'interpolate', ['linear'], ageExpr,
-        20,'#fff7ed', 30,'#fed7aa', 35,'#fdba74', 40,'#fb923c', 45,'#f97316', 50,'#ea580c', 55,'#9a3412' ], 'fill-opacity': 0.1 };
+        20,'#fff7ed', 30,'#fed7aa', 35,'#fdba74', 40,'#fb923c', 45,'#f97316', 50,'#ea580c', 55,'#9a3412' ], 'fill-opacity': 0.25 };
     } else if (layer.scheme === 'income') {
       paint = { 'fill-color': [ 'interpolate', ['linear'], incomeExpr,
-        30000,'#f0fdf4', 60000,'#bbf7d0', 90000,'#86efac', 120000,'#4ade80', 160000,'#22c55e', 200000,'#16a34a', 260000,'#166534' ], 'fill-opacity': 0.1 };
+        30000,'#f0fdf4', 60000,'#bbf7d0', 90000,'#86efac', 120000,'#4ade80', 160000,'#22c55e', 200000,'#16a34a', 260000,'#166534' ], 'fill-opacity': 0.25 };
     }
 
     map.addLayer({ id: layer.id, type: 'fill', source: 'tracts', layout: { visibility: (activeLayerId === layer.id) ? 'visible' : 'none' }, paint });
@@ -211,6 +214,86 @@ function applyIncidentLayerVisibility() {
   if (map.getLayer('spd-heat'))    map.setLayoutProperty('spd-heat',    'visibility', heatVis);
   applyIncidentFilters();
   if (typeof refreshViewModeButtonsUI === 'function') refreshViewModeButtonsUI();
+}
+
+// Simple address search (Mapbox Geocoding)
+function addAddressSearchControl() {
+  const ctrl = {
+    onAdd: () => {
+      const wrap = document.createElement('div');
+      wrap.className = 'mapboxgl-ctrl search-ctrl';
+      const input = document.createElement('input');
+      input.type = 'text'; input.placeholder = 'Search address in Seattle…'; input.setAttribute('aria-label','Search address');
+      const btn = document.createElement('button'); btn.textContent = 'Search';
+      const submit = async () => {
+        const q = input.value.trim(); if (!q) return;
+        try {
+          const bbox = [-122.459696, 47.481002, -122.224433, 47.734136];
+          const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxgl.accessToken}&types=address,poi&bbox=${bbox.join(',')}&limit=1`;
+          const resp = await fetch(url); const data = await resp.json();
+          const feat = data && data.features && data.features[0];
+          if (feat && Array.isArray(feat.center)) { map.flyTo({ center: feat.center, zoom: 15 }); }
+        } catch (e) { console.warn('Geocode failed:', e); }
+      };
+      btn.addEventListener('click', submit); input.addEventListener('keydown', (e)=>{ if (e.key==='Enter') submit(); });
+      wrap.appendChild(input); wrap.appendChild(btn); ctrl._el = wrap; return wrap;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  map.addControl(ctrl, 'top-left');
+}
+
+// Reset view/home control
+function addResetViewControl() {
+  const ctrl = {
+    onAdd: () => {
+      const wrap = document.createElement('div'); wrap.className = 'mapboxgl-ctrl mapboxgl-ctrl-group reset-ctrl';
+      const btn = document.createElement('button'); btn.setAttribute('title','Reset view');
+      btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`;
+      btn.addEventListener('click', () => resetView());
+      wrap.appendChild(btn); ctrl._el = wrap; return wrap;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  map.addControl(ctrl, 'top-left');
+}
+
+function resetView() {
+  try {
+    const bounds = new mapboxgl.LngLatBounds([-122.459696, 47.481002], [-122.224433, 47.734136]);
+    map.fitBounds(bounds, { padding: 40, duration: 600, maxZoom: 13.5 });
+    const MAX = 168;
+    const sEl = document.getElementById('tl-start'); const eEl = document.getElementById('tl-end'); const rangeEl = document.getElementById('tl-range');
+    if (sEl && eEl && rangeEl) { sEl.value = '0'; eEl.value = String(MAX); filterIncidentsByTime(0, MAX); rangeEl.style.left = '0%'; rangeEl.style.width = '100%'; }
+    setIncidentFilter(null); incidentViewMode = 'dots'; setIncidentVisibility(true); applyIncidentLayerVisibility();
+  } catch (e) { console.warn('Reset view failed:', e); }
+}
+
+// First-visit intro modal (shared pattern with SFD)
+function ensureIntroModal(contextLabel) {
+  try {
+    const KEY = 'cm_intro_seen_v1';
+    if (localStorage.getItem(KEY) === '1') return;
+    const overlay = document.createElement('div'); overlay.className = 'intro-overlay';
+    const modal = document.createElement('div'); modal.className = 'intro-modal';
+    modal.innerHTML = `
+      <h3>Welcome</h3>
+      <p>This map shows recent crimes in Seattle. Explore the data and customize the view:</p>
+      <ul>
+        <li>Filter by offense type using the table rows next to the pie chart.</li>
+        <li>Adjust the 7‑day timeline at the bottom to focus on a specific time window.</li>
+        <li>Switch basemaps and toggle Dot Density or Heatmap in the left control panel.</li>
+        <li>Click any dot to see details like time, address, and offense type.</li>
+      </ul>
+      <div class="intro-actions">
+        <button class="intro-btn" id="intro-ok">OK</button>
+      </div>`;
+    overlay.appendChild(modal); document.body.appendChild(overlay);
+    const close = () => { try { localStorage.setItem(KEY, '1'); } catch {} overlay.remove(); };
+    modal.querySelector('#intro-ok').addEventListener('click', close);
+    overlay.addEventListener('click', (e)=>{ if (e.target===overlay) close(); });
+    window.addEventListener('keydown', (e)=>{ if (e.key==='Escape') close(); }, { once: true });
+  } catch (e) { console.warn('Intro modal failed:', e); }
 }
 
 // Timeline (past 7 days)
