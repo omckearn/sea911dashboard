@@ -253,20 +253,23 @@ body, button, select, .mapboxgl-ctrl {
 .mapboxgl-ctrl.reset-ctrl {
   margin: 4px;
 }
-.reset-ctrl button {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #fff;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  padding: 0;
-  cursor: pointer;
+/* Increase specificity to override Mapbox's group button rules */
+.mapboxgl-ctrl.reset-ctrl.mapboxgl-ctrl-group > button {
+  width: 30px !important;
+  height: 30px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 0 !important; /* remove baseline offset */
+  box-sizing: border-box !important;
+  background: #fff !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 4px !important;
+  padding: 0 !important;
+  cursor: pointer !important;
 }
-.reset-ctrl button svg { display: block; width: 18px; height: 18px; fill: #374151; }
-.reset-ctrl button:hover svg { fill: #111827; }
+.mapboxgl-ctrl.reset-ctrl.mapboxgl-ctrl-group > button svg { display: block; margin: 0; width: 18px; height: 18px; fill: #374151; }
+.mapboxgl-ctrl.reset-ctrl.mapboxgl-ctrl-group > button:hover svg { fill: #111827; }
 
 .mapboxgl-ctrl.main-control-panel {
   background: transparent;
