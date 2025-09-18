@@ -346,6 +346,28 @@ body, button, select, .mapboxgl-ctrl {
 /* Hide the old legend title */
 .legend-title { display: none; }
 
+/* ACS legend control */
+.mapboxgl-ctrl.legend-ctrl {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px;
+  /* Keep clear of bottom timeline and above it */
+  margin-bottom: 90px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  z-index: 120;
+}
+.legend-ctrl .legend-body { display: flex; flex-direction: column; gap: 4px; }
+.legend-ctrl .legend-row { display: grid; grid-template-columns: repeat(7, auto); gap: 6px 8px; }
+.legend-ctrl .legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.legend-ctrl .legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend-ctrl .legend-label { color: #374151; }
+
 /* Bottom-left incident color swatches without labels */
 #incident-legend .legend-swatch {
   display: inline-block;

@@ -2,16 +2,17 @@ mapboxgl.accessToken = 'pk.eyJ1Ijoib21ja2Vhcm51dyIsImEiOiJjbTFqamRqeWcxMWF6MnJwc
 
 const map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/dark-v11',
+  style: 'mapbox://styles/mapbox/light-v11',
   center: [-122.3321, 47.6062],
   zoom: 11
 });
 
 // --- Basemap styles ---
 const BASE_STYLES = {
-  streets:   'mapbox://styles/mapbox/streets-v12',
-  Dark_Gray: 'mapbox://styles/mapbox/dark-v11',
-  satellite: 'mapbox://styles/mapbox/satellite-streets-v12'
+  Light_Gray: 'mapbox://styles/mapbox/light-v11',
+  Dark_Gray:  'mapbox://styles/mapbox/dark-v11',
+  streets:    'mapbox://styles/mapbox/streets-v12',
+  satellite:  'mapbox://styles/mapbox/satellite-streets-v12'
 };
 
 let activeLayerId = 'none';
@@ -73,6 +74,10 @@ map.on('load', () => {
   map.addControl(new mapboxgl.NavigationControl(), 'top-left');
   addResetViewControl();
   ensureIntroModal('SPD');
+  // ACS legend (visible only when ACS layer selected)
+  legendCtrl = new LegendControl();
+  map.addControl(legendCtrl, 'bottom-right');
+  if (legendCtrl) legendCtrl.update(activeLayerId === 'none' ? null : activeLayerId);
 });
 
 function buildTractLayers() {
@@ -117,6 +122,7 @@ function switchBasemap(key) {
     buildTractLayers();
     setActiveLayer(currentActive);
     restoreIncidentLayerIfMissing();
+    if (legendCtrl) legendCtrl.update(currentActive === 'none' ? null : currentActive);
   });
 }
 
@@ -143,8 +149,8 @@ function addMainControlPanel() {
       const bs = makeSection('Basemap');
       const br = document.createElement('div'); br.className = 'control-row';
       const bsel = document.createElement('select'); bsel.className = 'control-select';
-      bsel.innerHTML = `<option value="Dark_Gray">Dark Gray</option><option value="streets">City Streets</option><option value="satellite">Satellite</option>`;
-      bsel.value = 'Dark_Gray';
+      bsel.innerHTML = `<option value="Light_Gray">Light Gray</option><option value="Dark_Gray">Dark Gray</option><option value="streets">City Streets</option><option value="satellite">Satellite</option>`;
+      bsel.value = 'Light_Gray';
       bsel.onchange = () => switchBasemap(bsel.value);
       br.appendChild(bsel); bs.appendChild(br); panel.appendChild(bs);
 
@@ -193,6 +199,60 @@ function addMainControlPanel() {
   map.addControl(new MainPanelControl(), 'top-left');
 }
 
+// ACS Legend (mirrors SFD implementation)
+class LegendControl {
+  onAdd() {
+    const container = document.createElement('div');
+    container.className = 'mapboxgl-ctrl legend-ctrl';
+    container.innerHTML = `<div class="legend"><div class="legend-title">Legend</div><div class="legend-body"></div></div>`;
+    this._container = container;
+    return container;
+  }
+  onRemove() { if (this._container) this._container.remove(); }
+  update(activeId) {
+    if (!this._container) return;
+    const body = this._container.querySelector('.legend-body');
+    const titleEl = this._container.querySelector('.legend-title');
+    if (!activeId) { this._container.style.display = 'none'; body.innerHTML = ''; return; }
+    this._container.style.display = '';
+    body.innerHTML = '';
+    if (activeId === 'tracts-density') {
+      titleEl.textContent = 'Population density (per sq mi)';
+      const stops = [
+        { c: '#eff6ff', l: '0' }, { c: '#bfdbfe', l: '1k' }, { c: '#93c5fd', l: '3k' },
+        { c: '#60a5fa', l: '6k' }, { c: '#3b82f6', l: '12k' }, { c: '#1d4ed8', l: '20k' }, { c: '#1e40af', l: '40k+' }
+      ];
+      body.appendChild(makeSwatchRow(stops));
+    } else if (activeId === 'tracts-age') {
+      titleEl.textContent = 'Median age (years)';
+      const stops = [
+        { c: '#fff7ed', l: '20' }, { c: '#fed7aa', l: '30' }, { c: '#fdba74', l: '35' },
+        { c: '#fb923c', l: '40' }, { c: '#f97316', l: '45' }, { c: '#ea580c', l: '50' }, { c: '#9a3412', l: '55+' }
+      ];
+      body.appendChild(makeSwatchRow(stops));
+    } else if (activeId === 'tracts-income') {
+      titleEl.textContent = 'Median household income (USD)';
+      const stops = [
+        { c: '#f0fdf4', l: '$30k' }, { c: '#bbf7d0', l: '$60k' }, { c: '#86efac', l: '$90k' },
+        { c: '#4ade80', l: '$120k' }, { c: '#22c55e', l: '$160k' }, { c: '#16a34a', l: '$200k' }, { c: '#166534', l: '$260k+' }
+      ];
+      body.appendChild(makeSwatchRow(stops));
+    }
+  }
+}
+
+function makeSwatchRow(stops) {
+  const row = document.createElement('div');
+  row.className = 'legend-row';
+  stops.forEach(s => {
+    const item = document.createElement('div'); item.className = 'legend-item';
+    const sw = document.createElement('span'); sw.className = 'legend-swatch'; sw.style.backgroundColor = s.c;
+    const label = document.createElement('span'); label.className = 'legend-label'; label.textContent = s.l;
+    item.appendChild(sw); item.appendChild(label); row.appendChild(item);
+  });
+  return row;
+}
+
 function setActiveLayer(showId) {
   activeLayerId = showId;
   if (showId === 'none') {
@@ -205,6 +265,7 @@ function setActiveLayer(showId) {
     if (map.getLayer('tracts-outline')) map.setLayoutProperty('tracts-outline', 'visibility', 'visible');
   }
   if (layerSelectEl && layerSelectEl.value !== showId) layerSelectEl.value = showId;
+  if (legendCtrl) legendCtrl.update(showId === 'none' ? null : showId);
 }
 
 function applyIncidentLayerVisibility() {

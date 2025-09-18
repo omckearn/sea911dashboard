@@ -2,15 +2,16 @@ mapboxgl.accessToken = 'pk.eyJ1Ijoib21ja2Vhcm51dyIsImEiOiJjbTFqamRqeWcxMWF6MnJwc
 
 const map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/dark-v11',
+  style: 'mapbox://styles/mapbox/light-v11',
   center: [-122.3321, 47.6062],
   zoom: 11
 });
 
 // --- Basemap styles ---
 const BASE_STYLES = {
-  streets:   'mapbox://styles/mapbox/streets-v12',         
-  Dark_Gray:     'mapbox://styles/mapbox/dark-v11',
+  Light_Gray: 'mapbox://styles/mapbox/light-v11',
+  Dark_Gray:  'mapbox://styles/mapbox/dark-v11',
+  streets:   'mapbox://styles/mapbox/streets-v12',
   satellite: 'mapbox://styles/mapbox/satellite-streets-v12'
 };
 
@@ -101,6 +102,11 @@ map.on('load', () => {
   addResetViewControl();
   addDataAttributionControl();
   ensureIntroModal('SFD');
+
+  // ACS legend (visible only when ACS layer selected)
+  legendCtrl = new LegendControl();
+  map.addControl(legendCtrl, 'bottom-right');
+  if (legendCtrl) legendCtrl.update(activeLayerId === 'none' ? null : activeLayerId);
 
 });
 
@@ -391,11 +397,12 @@ function addMainControlPanel() {
       const basemapSelect = document.createElement('select');
       basemapSelect.className = 'control-select';
       basemapSelect.innerHTML = `
+        <option value="Light_Gray">Light Gray</option>
         <option value="Dark_Gray">Dark Gray</option>
         <option value="streets">City Streets</option>
         <option value="satellite">Satellite</option>
       `;
-      basemapSelect.value = 'Dark_Gray';
+      basemapSelect.value = 'Light_Gray';
       basemapSelect.onchange = () => switchBasemap(basemapSelect.value);
       basemapRow.appendChild(basemapSelect);
       basemapSection.appendChild(basemapRow);
