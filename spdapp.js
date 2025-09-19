@@ -31,6 +31,7 @@ window.currentTimeFilter = { startHour: 0, endHour: 168 };
 let refreshVisibilityToggleUI = null;
 let refreshViewModeButtonsUI = null;
 let legendCtrl = null;
+let acsAttribCtrl = null;
 
 // Data path for ACS tracts
 const tract_path = './data/tracts_wgs84.geojson';
@@ -78,6 +79,9 @@ map.on('load', () => {
   legendCtrl = new LegendControl();
   map.addControl(legendCtrl, 'bottom-right');
   if (legendCtrl) legendCtrl.update(activeLayerId === 'none' ? null : activeLayerId);
+
+  // ACS data attribution (only show when ACS layer is active)
+  addACSAttributionControl();
 });
 
 function buildTractLayers() {
@@ -302,6 +306,23 @@ function addAddressSearchControl() {
     onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
   };
   map.addControl(ctrl, 'top-left');
+}
+
+// Bottom-left ACS data attribution (only when ACS layer active)
+function addACSAttributionControl() {
+  const url = 'https://data.census.gov/profile/King_County,_Washington?g=050XX00US53033';
+  const ctrl = {
+    onAdd: () => {
+      const el = document.createElement('div');
+      el.className = 'mapboxgl-ctrl data-attrib-ctrl';
+      el.innerHTML = `Data: <a href="${url}" target="_blank" rel="noopener noreferrer">Census Bureau — King County</a>`;
+      ctrl._el = el;
+      return el;
+    },
+    onRemove: () => { if (ctrl._el) ctrl._el.remove(); }
+  };
+  acsAttribCtrl = ctrl;
+  map.addControl(ctrl, 'bottom-left');
 }
 
 // Reset view/home control

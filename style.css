@@ -346,8 +346,13 @@ body, button, select, .mapboxgl-ctrl {
   align-items: center;
 }
 
-/* Hide the old legend title */
-.legend-title { display: none; }
+/* Legend title styling (visible so units show) */
+.legend-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #374151;
+}
 
 /* ACS legend control */
 .mapboxgl-ctrl.legend-ctrl {

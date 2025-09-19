@@ -206,12 +206,16 @@ function buildTractLayers() {
 function addDataAttributionControl() {
   const url = 'https://data.seattle.gov/Public-Safety/Seattle-Real-Time-Fire-911-Calls/kzjm-xkqj/about_data';
   const label = 'Seattle Open Data Portal — Fire 911 Calls';
+  const acsUrl = 'https://data.census.gov/profile/King_County,_Washington?g=050XX00US53033';
 
   const ctrl = {
     onAdd: () => {
       const el = document.createElement('div');
       el.className = 'mapboxgl-ctrl data-attrib-ctrl';
-      el.innerHTML = `Data: <a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      el.innerHTML = `
+        Data: <a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a><br/>
+        Data: <a href="${acsUrl}" target="_blank" rel="noopener noreferrer">Census Bureau — King County</a>
+      `;
       ctrl._el = el;
       return el;
     },
