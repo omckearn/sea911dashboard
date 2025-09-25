@@ -22,6 +22,8 @@ let activeLayerId = 'none'; // default to none
 let layerSelectEl = null;
 
 let incidentViewMode = 'dots'; // 'dots' | 'heat'
+// Track current basemap key (affects point halos)
+let currentBasemapKey = 'Light_Gray';
 
 
 // Data path
@@ -357,6 +359,7 @@ function switchBasemap(key) {
   if (basemapSelectEl && basemapSelectEl.value !== key) {
     basemapSelectEl.value = key;
   }
+  currentBasemapKey = key;
 
   map.setStyle(styleURL);
   map.once('style.load', () => {
@@ -366,6 +369,7 @@ function switchBasemap(key) {
 
     // re-add the incident layer with correct coloring
     restoreIncidentLayerIfMissing();
+    refreshIncidentPointStyling();
   });
 }
 
@@ -394,6 +398,15 @@ function addMainControlPanel() {
         return section;
       };
 
+      // Collapsible: Basemap + ACS Layer
+      const layersGroup = document.createElement('div');
+      layersGroup.className = 'collapsible';
+      const header = document.createElement('div');
+      header.className = 'collapsible-header';
+      header.innerHTML = `<span>Layers</span><span class="carat">▸</span>`;
+      const content = document.createElement('div');
+      content.className = 'collapsible-content';
+
       // Basemap select
       const basemapSection = makeSection('Basemap');
       const basemapRow = document.createElement('div');
@@ -410,7 +423,6 @@ function addMainControlPanel() {
       basemapSelect.onchange = () => switchBasemap(basemapSelect.value);
       basemapRow.appendChild(basemapSelect);
       basemapSection.appendChild(basemapRow);
-      panel.appendChild(basemapSection);
 
       // ACS Data select
       const layerSection = makeSection('ACS Data Layer');
@@ -423,18 +435,43 @@ function addMainControlPanel() {
       layerSelect.onchange = () => setActiveLayer(layerSelect.value);
       layerRow.appendChild(layerSelect);
       layerSection.appendChild(layerRow);
-      panel.appendChild(layerSection);
+
+      content.appendChild(basemapSection);
+      content.appendChild(layerSection);
+      layersGroup.appendChild(header);
+      layersGroup.appendChild(content);
+      panel.appendChild(layersGroup);
+
+      // default collapsed
+      let layersOpen = false;
+      const syncCarat = () => {
+        layersGroup.classList.toggle('open', layersOpen);
+        const carat = header.querySelector('.carat');
+        if (carat) carat.textContent = layersOpen ? '▾' : '▸';
+      };
+      header.addEventListener('click', () => { layersOpen = !layersOpen; syncCarat(); });
+      syncCarat();
 
       // Incident visibility toggle
       const visibilitySection = makeSection('Dispatches');
       const visibilityRow = document.createElement('div');
       visibilityRow.className = 'control-row';
-      const visibilityBtn = document.createElement('button');
-      visibilityBtn.className = 'toggle-fill-btn';
-      visibilityBtn.onclick = () => {
-        setIncidentVisibility(!incidentLayerVisible);
-      };
-      visibilityRow.appendChild(visibilityBtn);
+      const switchWrap = document.createElement('label');
+      switchWrap.className = 'switch';
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'switch-label';
+      labelSpan.textContent = 'Show Dispatches';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.id = 'dispatch-toggle';
+      chk.setAttribute('role', 'switch');
+      chk.setAttribute('aria-label', 'Show Dispatches');
+      const ui = document.createElement('span');
+      ui.className = 'switch-ui';
+      switchWrap.appendChild(labelSpan);
+      switchWrap.appendChild(chk);
+      switchWrap.appendChild(ui);
+      visibilityRow.appendChild(switchWrap);
       visibilitySection.appendChild(visibilityRow);
       panel.appendChild(visibilitySection);
 
@@ -465,10 +502,11 @@ function addMainControlPanel() {
       basemapSelectEl = basemapSelect;
       layerSelectEl = layerSelect;
       refreshVisibilityToggleUI = () => {
-        if (!visibilityBtn) return;
-        visibilityBtn.className = `toggle-fill-btn ${incidentLayerVisible ? 'on' : 'off'}`;
-        visibilityBtn.textContent = incidentLayerVisible ? 'Hide Dispatches' : 'Show Dispatches';
+        if (!chk) return;
+        chk.checked = !!incidentLayerVisible;
+        chk.setAttribute('aria-checked', chk.checked ? 'true' : 'false');
       };
+      chk.addEventListener('change', () => setIncidentVisibility(chk.checked));
       refreshViewModeButtonsUI = () => {
         btnDots.className = `toggle-fill-btn ${incidentViewMode === 'dots' ? 'on' : 'off'}`;
         btnHeat.className = `toggle-fill-btn ${incidentViewMode === 'heat' ? 'on' : 'off'}`;
@@ -582,8 +620,25 @@ function setupTimeline() {
   const start = document.getElementById("tl-start");
   const end = document.getElementById("tl-end");
   const rangeEl = document.getElementById("tl-range");
+  const playBtn = document.getElementById('tl-play');
 
   const minGap = 1; // min 1 hour
+  let playTimer = null;
+  let playWindow = null; // window size in hours
+
+  function setTimelineRange(s, e) {
+    const MAX = 24;
+    let ss = Math.max(0, Math.min(MAX, s));
+    let ee = Math.max(0, Math.min(MAX, e));
+    if (ee - ss < minGap) ee = Math.min(MAX, ss + minGap);
+    start.value = String(ss);
+    end.value = String(ee);
+    filterIncidentsByTime(ss, ee);
+    const pctStart = (ss / 24) * 100;
+    const pctEnd = (ee / 24) * 100;
+    rangeEl.style.left = pctStart + "%";
+    rangeEl.style.width = (pctEnd - pctStart) + "%";
+  }
 
   function updateRange() {
     let s = parseInt(start.value);
@@ -610,9 +665,61 @@ function setupTimeline() {
   start.addEventListener("input", updateRange);
   end.addEventListener("input", updateRange);
   updateRange();
+
+  function stopPlaying() {
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+    }
+    if (playBtn) {
+      playBtn.setAttribute('aria-pressed', 'false');
+      playBtn.textContent = '▶';
+      playBtn.title = 'Play timeline';
+    }
+  }
+
+  function startPlaying() {
+    const s0 = parseInt(start.value);
+    const e0 = parseInt(end.value);
+    playWindow = Math.max(minGap, e0 - s0);
+    // If full 24h window is selected, default animate window to 6h for visible motion
+    if (playWindow >= 24) playWindow = 6;
+    // Always stop any existing timer BEFORE marking as playing and starting a new one
+    stopPlaying();
+    if (playBtn) {
+      playBtn.setAttribute('aria-pressed', 'true');
+      playBtn.textContent = '❚❚';
+      playBtn.title = 'Pause timeline';
+    }
+    let pos = Math.max(0, Math.min(24 - playWindow, isFinite(s0) ? s0 : 0));
+    playTimer = setInterval(() => {
+      const s = pos;
+      const e = Math.min(24, pos + playWindow);
+      setTimelineRange(s, e);
+      pos += 1;
+      if (pos + playWindow > 24) pos = 0; // loop
+    }, 600);
+  }
+
+  if (playBtn) {
+    playBtn.addEventListener('click', () => {
+      const pressed = playBtn.getAttribute('aria-pressed') === 'true';
+      if (pressed) stopPlaying(); else startPlaying();
+    });
+  }
 }
 
 window.addEventListener("DOMContentLoaded", setupTimeline);
+
+// Update subtitle under title chip
+function updateMapSubtitle(dateObj) {
+  const el = document.getElementById('map-subtitle');
+  if (!el) return;
+  const d = dateObj || new Date();
+  const date = new Intl.DateTimeFormat('en-US', { month:'short', day:'2-digit', timeZone: 'America/Los_Angeles' }).format(d);
+  const time = new Intl.DateTimeFormat('en-US', { hour:'2-digit', minute:'2-digit', hour12: false, timeZone: 'America/Los_Angeles' }).format(d);
+  el.textContent = `Data updated: ${date} ${time} PT`;
+}
 
 
 
@@ -783,6 +890,7 @@ async function load911CallsPast24h() {
     };
 
     window.latest911Geojson = geojson;
+    try { updateMapSubtitle(new Date()); } catch (e) {}
 
     // Render chart first, to build window.typeColorMap
     renderIncidentChart(features);
@@ -805,7 +913,7 @@ async function load911CallsPast24h() {
         type: 'circle',
         source: 'calls24h',
         paint: {
-          'circle-radius': 4,
+          'circle-radius': 6,
           'circle-opacity': [
             'case',
             ['==', ['get', 'category'], ['get', 'selectedCategory']],
@@ -816,12 +924,9 @@ async function load911CallsPast24h() {
           ],
           'circle-color': matchExpr,
           'circle-stroke-color': '#000',
-          'circle-stroke-width': 0.5
+          'circle-stroke-width': 1
         }
-        
-        
       });
-      // --- ADD THIS right after map.addLayer({... id: 'calls24h-circles' ...}) ---
 
     // Only add if it doesn't exist
     if (!map.getLayer('calls24h-heat')) {
@@ -858,14 +963,12 @@ async function load911CallsPast24h() {
 
       });
 
-      // Make sure the dots sit above the heatmap when both are visible (just in case)
-      if (map.getLayer('calls24h-circles')) {
-        map.moveLayer('calls24h-circles');
-      }
+      // no-op
     }
 
     // Apply current mode visibility
     applyIncidentLayerVisibility();
+    refreshIncidentPointStyling();
 
       
 
@@ -887,8 +990,34 @@ async function load911CallsPast24h() {
       map.on('mouseenter', 'calls24h-circles', () => {
         map.getCanvas().style.cursor = 'pointer';
       });
+      // Hover tooltip
+      let hoverPopup = null;
+      const fmtTime = (d) => new Date(d).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'America/Los_Angeles' });
+      const getNeighborhoodAtPoint = (pt) => {
+        const layers = [];
+        if (map.getLayer('tracts-outline') && map.getLayoutProperty('tracts-outline','visibility') !== 'none') layers.push('tracts-outline');
+        ['tracts-density','tracts-age','tracts-income'].forEach(id => {
+          if (map.getLayer(id) && map.getLayoutProperty(id,'visibility') === 'visible') layers.push(id);
+        });
+        if (!layers.length) return 'Unknown';
+        try {
+          const feats = map.queryRenderedFeatures(pt, { layers });
+          const p = feats && feats[0] && feats[0].properties || {};
+          return (p.GEN_ALIAS || p.DETL_NAMES || p.NAME || 'Unknown');
+        } catch (_) { return 'Unknown'; }
+      };
+      map.on('mousemove', 'calls24h-circles', (e) => {
+        const f = e.features && e.features[0];
+        if (!f) return;
+        const props = f.properties || {};
+        const hood = getNeighborhoodAtPoint(e.point);
+        const text = `${props.type || '—'} | ${fmtTime(props.datetime)} | ${hood}`;
+        if (!hoverPopup) hoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+        hoverPopup.setLngLat(e.lngLat).setHTML(`<div style="font-size:12px">${text}</div>`).addTo(map);
+      });
       map.on('mouseleave', 'calls24h-circles', () => {
         map.getCanvas().style.cursor = '';
+        if (hoverPopup) { try { hoverPopup.remove(); } catch{} hoverPopup = null; }
       });
     }
 
@@ -928,7 +1057,9 @@ function renderIncidentChart(features) {
 
   // Remember which categories are in the "top" buckets (excluding the synthetic Other)
   const realTopCategories = top9.filter(([t]) => t !== 'Other').map(([t]) => t);
-  window.topCategoriesReal = realTopCategories;
+  // Canonical top categories determined at initial load
+  window.topCategoriesCanonical = realTopCategories;
+  window.otherCategoryColor = '#9ca3af';
 
   // ✨ Your palette (10 colors)
   const colors = [
@@ -936,26 +1067,16 @@ function renderIncidentChart(features) {
     '#A8DADC', '#6A4C93', '#457B9D', '#FFB703', '#8D99AE'
   ];
 
-  // Build the type → color map (used by map dots)
+  // Build the type → color map (used by map dots) and keep it stable
   window.typeColorMap = {};
   labels.forEach((label, i) => { window.typeColorMap[label] = colors[i]; });
 
   // Draw pie
   const chart = document.getElementById('chart-content');
-  chart.innerHTML = `<canvas id="pieCanvas" width="240" height="240"></canvas><div id="pie-legend"></div>`;
+  chart.innerHTML = `<canvas id="pieCanvas" width="280" height="280"></canvas><div id="pie-legend"></div>`;
   const canvas = document.getElementById('pieCanvas');
   const ctx = canvas.getContext('2d');
-  let start = 0;
-  counts.forEach((count, i) => {
-    const angle = (count / total) * 2 * Math.PI;
-    ctx.beginPath();
-    ctx.moveTo(120, 120);
-    ctx.arc(120, 120, 100, start, start + angle);
-    ctx.closePath();
-    ctx.fillStyle = colors[i];
-    ctx.fill();
-    start += angle;
-  });
+  drawPieChart(ctx, labels, counts, colors, -1);
 
   // Legend as a table with single-line rows
   const legend = document.getElementById('pie-legend');
@@ -980,10 +1101,8 @@ function renderIncidentChart(features) {
   labels.forEach((label, i) => {
     const count = counts[i];
     const percentage = ((count / total) * 100).toFixed(1);
-    const bgColor = i % 2 === 0 ? '#ffffff' : '#f3f4f6';
 
     const row = document.createElement('tr');
-    row.style.background = bgColor;
     row.style.height = '32px';
     row.style.cursor = 'pointer';
     row.dataset.category = label;
@@ -1002,7 +1121,7 @@ function renderIncidentChart(features) {
     countCell.style.padding = '6px 8px';
     countCell.style.textAlign = 'right';
     countCell.style.whiteSpace = 'nowrap';
-    countCell.textContent = `${count} (${percentage}%)`;
+    countCell.innerHTML = `${count} (<span class="pct">${percentage}%</span>)`;
 
     row.appendChild(typeCell);
     row.appendChild(countCell);
@@ -1020,6 +1139,14 @@ function renderIncidentChart(features) {
       }
       // Update the row highlight to match current selection
       syncRowSelectionUI();
+    });
+
+    // Hover to highlight slice
+    row.addEventListener('mouseenter', () => {
+      drawPieChart(ctx, labels, counts, colors, i);
+    });
+    row.addEventListener('mouseleave', () => {
+      drawPieChart(ctx, labels, counts, colors, -1);
     });
   });
 
@@ -1049,6 +1176,22 @@ function setIncidentVisibility(visible) {
   }
 }
 
+function getPointStrokeColorForBasemap() {
+  // Prefer white halo on dark/satellite, dark halo on light/streets
+  if (currentBasemapKey === 'Dark_Gray' || currentBasemapKey === 'satellite') return '#ffffff';
+  return '#0f172a';
+}
+
+function refreshIncidentPointStyling() {
+  try {
+    if (map.getLayer('calls24h-circles')) {
+      map.setPaintProperty('calls24h-circles', 'circle-stroke-color', getPointStrokeColorForBasemap());
+      map.setPaintProperty('calls24h-circles', 'circle-stroke-width', 1);
+      map.setPaintProperty('calls24h-circles', 'circle-radius', 6);
+    }
+  } catch (e) { /* noop */ }
+}
+
 
 function restoreIncidentLayerIfMissing() {
   if (!map.getSource('calls24h') && window.latest911Geojson) {
@@ -1074,7 +1217,7 @@ function restoreIncidentLayerIfMissing() {
         'circle-color': matchExpr,
         'circle-opacity': 0.75,
         'circle-stroke-color': '#000',
-        'circle-stroke-width': 0.5
+        'circle-stroke-width': 1
       }
     });
 
@@ -1101,7 +1244,9 @@ function restoreIncidentLayerIfMissing() {
     });
 
     setIncidentVisibility(incidentLayerVisible);
+    refreshIncidentPointStyling();
   }
+  // No cluster layers in restore
   if (!map.getLayer('calls24h-heat') && map.getSource('calls24h')) {
     map.addLayer({
       id: 'calls24h-heat',
@@ -1194,8 +1339,8 @@ function applyIncidentFilters() {
 
   const selectedType = window.selectedCrimeType || null;
   if (selectedType) {
-    if (selectedType === 'Other' && Array.isArray(window.topCategoriesReal) && window.topCategoriesReal.length) {
-      const topList = window.topCategoriesReal;
+    if (selectedType === 'Other' && Array.isArray(window.topCategoriesCanonical) && window.topCategoriesCanonical.length) {
+      const topList = window.topCategoriesCanonical;
       // Build a conjunction of "!= each top category"
       topList.forEach(cat => {
         activeFilters.push(['!=', ['get', 'category'], cat]);
@@ -1296,8 +1441,8 @@ function updateIncidentChartForCurrentSelection() {
   // Optionally apply category filter so chart matches what’s visible
   const selectedType = window.selectedCrimeType || null;
   if (selectedType) {
-    if (selectedType === 'Other' && Array.isArray(window.topCategoriesReal) && window.topCategoriesReal.length) {
-      const topSet = new Set(window.topCategoriesReal);
+    if (selectedType === 'Other' && Array.isArray(window.topCategoriesCanonical) && window.topCategoriesCanonical.length) {
+      const topSet = new Set(window.topCategoriesCanonical);
       filtered = filtered.filter(f => !topSet.has(f?.properties?.category));
     } else {
       filtered = filtered.filter(f => (f?.properties?.category) === selectedType);
@@ -1316,39 +1461,24 @@ function renderIncidentChartDynamic(features) {
     typeCounts[type] = (typeCounts[type] || 0) + 1;
   });
 
-  const total = Object.values(typeCounts).reduce((a, b) => a + b, 0);
-  const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
-  const top9 = sorted.slice(0, 9);
-  const otherCount = sorted.slice(9).reduce((sum, [, c]) => sum + c, 0);
-  if (otherCount > 0) top9.push(['Other', otherCount]);
-
-  const labels = top9.map(([t]) => t);
-  const counts = top9.map(([, c]) => c);
-
-  // Track real top list for correct "Other" handling on click
-  window.topCategoriesReal = top9.filter(([t]) => t !== 'Other').map(([t]) => t);
-
+  // Group using the initial top categories; everything else is Other
+  const totalAll = Object.values(typeCounts).reduce((a, b) => a + b, 0);
+  const canonical = Array.isArray(window.topCategoriesCanonical) ? window.topCategoriesCanonical : [];
   const colorMap = window.typeColorMap || {};
-  const colors = labels.map(l => colorMap[l] || '#9ca3af');
+  const otherColor = window.otherCategoryColor || '#9ca3af';
+  const labels = [...canonical];
+  const counts = canonical.map(c => typeCounts[c] || 0);
+  const sumTop = counts.reduce((a,b)=>a+b,0);
+  const otherCount = Math.max(0, totalAll - sumTop);
+  if (otherCount > 0) { labels.push('Other'); counts.push(otherCount); }
+  const colors = labels.map(l => (l === 'Other') ? otherColor : (colorMap[l] || otherColor));
 
   const chart = document.getElementById('chart-content');
   if (!chart) return;
-  chart.innerHTML = `<canvas id="pieCanvas" width="240" height="240"></canvas><div id="pie-legend"></div>`;
+  chart.innerHTML = `<canvas id="pieCanvas" width="280" height="280"></canvas><div id="pie-legend"></div>`;
   const canvas = document.getElementById('pieCanvas');
   const ctx = canvas.getContext('2d');
-
-  let start = 0;
-  const safeTotal = total || 1; // avoid 0/0 angles
-  counts.forEach((count, i) => {
-    const angle = (count / safeTotal) * 2 * Math.PI;
-    ctx.beginPath();
-    ctx.moveTo(120, 120);
-    ctx.arc(120, 120, 100, start, start + angle);
-    ctx.closePath();
-    ctx.fillStyle = colors[i];
-    ctx.fill();
-    start += angle;
-  });
+  drawPieChart(ctx, labels, counts, colors, -1);
 
   const legend = document.getElementById('pie-legend');
   legend.innerHTML = '';
@@ -1370,11 +1500,9 @@ function renderIncidentChartDynamic(features) {
 
   labels.forEach((label, i) => {
     const count = counts[i];
-    const percentage = ((count / (safeTotal || 1)) * 100).toFixed(1);
-    const bgColor = i % 2 === 0 ? '#ffffff' : '#f3f4f6';
-
+    if (!count) return; // omit zero-count categories from the legend table
+    const percentage = ((count / (totalAll || 1)) * 100).toFixed(1);
     const row = document.createElement('tr');
-    row.style.background = bgColor;
     row.style.height = '32px';
     row.style.cursor = 'pointer';
     row.dataset.category = label;
@@ -1393,7 +1521,7 @@ function renderIncidentChartDynamic(features) {
     countCell.style.padding = '6px 8px';
     countCell.style.textAlign = 'right';
     countCell.style.whiteSpace = 'nowrap';
-    countCell.textContent = `${count} (${percentage}%)`;
+    countCell.innerHTML = `${count} (<span class=\"pct\">${percentage}%</span>)`;
 
     row.appendChild(typeCell);
     row.appendChild(countCell);
@@ -1405,7 +1533,38 @@ function renderIncidentChartDynamic(features) {
       else setIncidentFilter(label);
       syncRowSelectionUI();
     });
+    row.addEventListener('mouseenter', () => { drawPieChart(ctx, labels, counts, colors, i); });
+    row.addEventListener('mouseleave', () => { drawPieChart(ctx, labels, counts, colors, -1); });
   });
   legend.appendChild(table);
   syncRowSelectionUI();
+}
+
+// Draws the pie chart with an optional highlighted slice index
+function drawPieChart(ctx, labels, counts, colors, highlightIdx) {
+  if (!ctx) return;
+  const total = (counts || []).reduce((a,b)=>a+b,0) || 1;
+  const cx = 140, cy = 140, r = 116;
+  let start = 0;
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  counts.forEach((count, i) => {
+    const angle = (count / total) * 2 * Math.PI;
+    const mid = start + angle / 2;
+    const isHL = i === highlightIdx;
+    const off = isHL ? 6 : 0;
+    const ox = Math.cos(mid) * off;
+    const oy = Math.sin(mid) * off;
+    ctx.beginPath();
+    ctx.moveTo(cx + ox, cy + oy);
+    ctx.arc(cx + ox, cy + oy, r, start, start + angle);
+    ctx.closePath();
+    ctx.fillStyle = colors[i];
+    ctx.fill();
+    if (isHL) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.stroke();
+    }
+    start += angle;
+  });
 }

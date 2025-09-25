@@ -30,6 +30,11 @@
 
   <!-- 🔹 Map container -->
   <div id="map"></div>
+  <!-- Centered title above map -->
+  <div class="map-title-panel">
+    <div class="map-title">Seattle Fire Dispatches – Past 24 Hours</div>
+    <div class="map-subtitle" id="map-subtitle"></div>
+  </div>
   <div id="chart-panel">
     <h3>Dispatch Breakdown</h3>
     <div id="chart-range"></div>
@@ -38,19 +43,30 @@
   <!-- Timeline (24h ago -> Now) -->
   <div id="timeline">
   <div class="tl-card">
+    <div class="tl-controls">
+      <button id="tl-play" class="tl-play" aria-pressed="false" title="Play timeline">▶</button>
+    </div>
     <div class="tl-wrap">
+      <div class="tl-tickmarks">
+        <span class="tl-tick" style="left:0%"></span>
+        <span class="tl-tick" style="left:25%"></span>
+        <span class="tl-tick" style="left:50%"></span>
+        <span class="tl-tick" style="left:75%"></span>
+        <span class="tl-tick" style="left:100%"></span>
+      </div>
+      <div class="tl-labels">
+        <span class="tl-label first" style="left:0%">24h ago</span>
+        <span class="tl-label" style="left:25%">18h ago</span>
+        <span class="tl-label" style="left:50%">12h ago</span>
+        <span class="tl-label" style="left:75%">6h ago</span>
+        <span class="tl-label last" style="left:100%">Now</span>
+      </div>
       <div class="tl-track"></div>
       <div class="tl-range" id="tl-range"></div>
       <input type="range" id="tl-start" min="0" max="24" value="0" step="1">
       <input type="range" id="tl-end" min="0" max="24" value="24" step="1">
     </div>
-    <div class="tl-ticks">
-      <span>24h ago</span>
-      <span>18h</span>
-      <span>12h</span>
-      <span>6h</span>
-      <span>Now</span>
-    </div>
+    <div class="tl-ticks"></div>
   </div>
 </div>
 
