@@ -2,7 +2,7 @@ mapboxgl.accessToken = 'pk.eyJ1Ijoib21ja2Vhcm51dyIsImEiOiJjbTFqamRqeWcxMWF6MnJwc
 
 const map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/light-v11',
+  style: 'mapbox://styles/mapbox/streets-v12',
   center: [-122.3321, 47.6062],
   zoom: 11
 });
@@ -23,7 +23,7 @@ let layerSelectEl = null;
 
 let incidentViewMode = 'dots'; // 'dots' | 'heat'
 // Track current basemap key (affects point halos)
-let currentBasemapKey = 'Light_Gray';
+let currentBasemapKey = 'streets';
 
 
 // Data path
@@ -419,7 +419,7 @@ function addMainControlPanel() {
         <option value="streets">City Streets</option>
         <option value="satellite">Satellite</option>
       `;
-      basemapSelect.value = 'Light_Gray';
+      basemapSelect.value = 'streets';
       basemapSelect.onchange = () => switchBasemap(basemapSelect.value);
       basemapRow.appendChild(basemapSelect);
       basemapSection.appendChild(basemapRow);

@@ -17,7 +17,7 @@ body {
 /* Chart panel floats above the map, below the header */
 #chart-panel {
   position: fixed;         /* pin to viewport */
-  top: 168px;              /* clear header + expanded title panel + search */
+  top: 72px;               /* move near top-right, above search */
   right: 12px;
   width: 380px;            /* more horizontal space for legend */
   max-height: calc(100% - 76px);
